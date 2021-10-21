@@ -1,0 +1,760 @@
+---
+title: "midtermexam"
+author: "JunseoKim"
+date: '2021 10 19 '
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE, echo=F,warning = FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#library(tidyverse)
+# install.packages('lmtest')
+# install.packages('astsa')
+library(datasets)
+library(gam)
+#options("install.lock"=FALSE)
+```
+  
+# Mean 과 이분산 패턴 잡아주기  
+1. constant 라고 가정을 하고 mean 패턴 제거 -> 선형 모델이 적합하지 않은데 사용해서 mean 패턴이 발생 -> 비선형으로 만들어주기 -> 잡았다.  
+2. 이후에, 이분산 패턴이 존재할 경우, 이분산 패턴을 잡아준다.  
+  
+  
+먼저 데이터를 확인한다. attenu 데이터를 부르면, 이 데이터는 캘리포니아의 23개 지진에 대해 다양한 관측소에서 측정된 최고 가속도를 보여준다.  
+  
+182개의 row와 5개의 column을 가진다.  
+```{r attenu,warning = FALSE, message = FALSE}
+as_data_frame(attenu)
+dim(attenu)#데이터를 부른다.
+summary(attenu)#부른 데이터를 통해서 summary 진행
+```
+
+## linear model with dataset  
+먼저 선형이라고 가정을 한다.   
+linear model 함수인 lm을 통해서 accel을 y변수, 나머지를 x변수로 만들고 모델링을 진행한다.  
+summary를 하면, mag와 dist 변수는 relative 하게 나타났으며, event 변수는 irrelative 하게 나타났다. 즉 mag와 dist를 가지고 실행한다.  
+
+residual 그래프를 보면, 현재 mean패턴이 존재함을 알 수 있다.   
+또한 normal qq 그래프를 보면, 정규성을 따른다기에는 애매한 그래프를 가지고 있다.(조금 오른쪽으로 치우친 듯 하다.)  
+
+
+```{r variance select,warning = FALSE, message = FALSE}
+## 먼저 lm을 진행해서 선형으로 만들어준다.
+fit1 = lm(accel ~ mag + dist +event, data=attenu);summary(fit1)
+plot(fit1)
+```
+Anova를 이용해서 데이터간 결과를 얻어내려고 한다.  
+모두 비선형으로 두었을 경우를 fit2_all이라고 선언한다. fit2_mag, fit2_dist는 각 변수를 비선형으로 두고 나머지 변수를 선형으로 둔 경우이다.  
+이 경우에 Anova를 실행하면, 비선형에서 선형으로 그래프가 바꼈을 때, 그 변화가 유의미한지를 볼 수 있다.   
+유의미하게 나올 경우에는, 비선형을 유지해야 하며, 유의미하지 않을 경우에는 비선형과 선형의 큰 차이가 있다는 뚜렷한 근거가 부족하므로, 선형으로 진행하도록 한다.  
+  
+plot(fit2_all) 을 통해서 나온 두 그래프를 보면 첫번째 그래프에서는 곡선이 약간 휘어져 있으나, 거의 1차에 가까운 그래프 모형을 띄고 있다. 두번째 그래프에서는 지수 분포 형태의 곡선이 나타났다. 이는 지수형태의 비선형 모델링을 진행하면 될 것 같았다.   
+
+anova(fit2_all, fit2_mag)의 결과를 보면, dist가 선형으로 바꾸미에 따라서 pvalue가 작은 값을 나타내고 있다. 이는 유의미한 차이임을 의미하며, 그에 따라서 선형이 아닌 비선형을 사용해야 한다. 위의 그래프 개형을 보면, 2차 모형의 비선형 모델링을 진행하면 될 것 같았다.  
+  
+```{r anova_mag,warning = FALSE, message = FALSE}
+## 아노바를 진행해서 데이터간 결과를 얻어낸다. 모두 비선형으로 두었을 경우와, 하나만 선형으로 두었을 경우를 비교하면, 각 변수가 선형이어도 되는지 아닌지를 판단할 수 있다.
+fit2_all = gam(accel~s(mag,5) +s(dist,5), data = attenu)
+##plot 표현
+plot(fit2_all) 
+##anova 진행 -> dist가 선형이어도 될까?
+fit2_mag = gam(accel~s(mag,5) + dist , data = attenu)
+anova(fit2_all, fit2_mag)
+```
+anova(fit2_all, fit2_dist)에 따르면, 이 anova 또한 p value가 작게 나타나는데 이에 따르면 유의미한 차이를 나타낸다고 할 수 있다. 그에 따라서 선형이 아닌 비선형을 또한 사용해야 하며, 위의 그래프 개형을 보면, exponentioal 함수를 비선형 모델로 사용하면 좋을 것 같았다.  
+```{r anova_dist,warning = FALSE, message = FALSE}
+
+fit2_dist = gam(accel~ mag  + s(dist,5) , data = attenu)
+anova(fit2_all, fit2_dist)
+
+```
+다시 정리하자면,  
+fits_all을 residual plot을 그려봤을 경우에, mag 에 대해서는 1차와 비슷한 비선형이 나타났으므로, 선형으로 진행해도 상관이 없는지 anova를 진행한다.  
+그러나 dist에 대한 경우에서는 exponential 분포를 나타냈다 -> exponential을 적용하도록 한다.  
+
+anova about two variance;  
+먼저 dist 를 선형으로 두고 anova를 진행하였다.  
+anova 결과에 따르면 dist가 비선형에서 선형으로 변화할 경우, 유의미한 차이를 보였다. 즉 비선형으로 유지를 해야 한다.  
+anova 결과에 따르면 mag는 비선형에서 선형으로 변화할 경우에, 유의미한 차이를 보였으므로, 선형으로 표현에서는 한계가 있다. 즉 비슷한 2차 비선형으로 변환한다.  
+  
+mag는 선형으로, dist는 비선형 중에서 exponential을 사용해서 표현하도록 한다.  
+
+위의 결과에 따라,    
+x1 + beta1X2 + beta2X3 + beta4 exp(-betaX2) 를 함수로 둔다.  
+또한 RSS 식을 만들어준다.(Sum(Y-f)^2) -> 잔차 제곱의 합  
+
+```{r function of this data,warning = FALSE, message = FALSE}
+##  beta[1] + beta[2]*X1 + beta[3]*X1^2 
+##  beta[1]+ beta[2]*exp(-beta[3]*X2)
+##  beta[1]+ beta[2]*log(-beta[3]*X2)
+
+
+f = function(beta,X)
+{
+  X1 = X[,1]; X2 = X[,2]  
+  beta[1] + beta[2]*X1 + beta[3]*X1^2 + beta[4]*exp(-beta[5]*X2)
+}
+
+RSS = function(beta, Y, X) sum((Y-f(beta, X))^2)
+```
+다음은 1차 미분 함수를 만든다.   
+
+gradient는 꼭 만들어줘야 하는 함수는 아니다. 자동적으로 계산해주기는 하나, 만들어서 직접 넣어줄 경우에, 계산이 더 빠르게 된다는 장점이 있다.
+아래는 1차 2차 3차 지수 분포의 gradient 분포이다.  
+
+```{r gradient,warning = FALSE, message = FALSE}
+## gradient 함수를 만든다.
+## 1차:  x0 + beta1x1 => -2*sum(R), -2*sum(R*X1)
+## 2차: -2*sum(R), -2*sum(R*X1), -2*sum(R*X1^2)
+## 3차: -2*sum(R), -2*sum(R*X1), -2*sum(R*X1^2), -2*sum(R*X1^3)
+## 지수분포: -2*sum(R*exp(beta[5]*X2))
+## 이외에는 gradient를 믿자!
+
+## 그냥 로그 함수의 형태는 betalog(betax)인듯
+
+
+##2차와 exponential 상황:
+grv = function(beta,Y,X)
+{
+  X1 = X[,1]; X2 = X[,2]
+  R = Y - f(beta,X)
+  c(-2*sum(R), -2*sum(R*X1), -2*sum(R*X1^2), -2*sum(R*exp(-beta[5]*X2)), 
+    2*beta[4]*sum(R*X2*exp(-beta[5]*X2)))  
+}
+
+
+
+```
+
+
+```{r optimization,warning = FALSE, message = FALSE}
+# Optimization## 선형 함수를 써도 되면 mean 패턴을 잡을 필요가 없음.
+X = cbind(attenu$mag,attenu$dist)
+colnames(X) = c('mag', 'dist')
+Y = attenu$accel
+ml1 = optim(rep(0.1,5), RSS, gr=grv, method='BFGS', X=X, Y=Y) #beta의 개수수
+ml1
+
+beta.hat = ml1$par
+beta.hat
+
+# Fitted value
+Yhat = f(beta.hat,X)
+
+# Residual plot
+r = Y - Yhat
+par(mfrow=c(1,1))
+plot(Yhat,r,ylim=c(-0.5,0.5))
+lines(c(-10,10),c(0,0),col='red')
+# Linearly increasing variance pattern.
+```
+### Nonlinear model with nonconstant variance
+
+
+```{r non_constant_pattern,warning = FALSE, message = FALSE}
+# To check whether a matrix is singular or not
+# install.packages('matrixcalc') 
+library(matrixcalc)
+
+# Objective function for mean function: Genearalized least square method.
+obj.mean = function(beta,Y,X,S) t(Y-f(beta,X)) %*% solve(S) %*% (Y-f(beta,X))
+# S: Covariance matrix
+
+# Gradient vector of the objective function
+gr.mean = function(beta,Y,X,S)
+{
+  sigma2 = diag(S)
+  X1 = X[,1]; X2 = X[,2]
+  R = Y - f(beta,X)
+  c(-2*sum(R/sigma2), -2*sum(R*X1/sigma2), -2*sum(R*X1^2/sigma2), 
+    -2*sum(R*exp(-beta[5]*X2)/sigma2), 
+    2*beta[4]*sum(R*X2*exp(-beta[5]*X2)/sigma2))  
+}
+
+
+```
+## 이분산 잡아주기
+
+위에서 확인된 이분산을 잡아주기 위해서 아래와 같은 작업을 한다.
+비선형일 경우에는 obs = function(gamma,Z,r) sum((r^2 - (Z%*%gamma))^2/(Z%*%gamma)^2)를 사용한다. 이 그래프는 선형인 경우이다.
+만약 2차인 경우에는 Z에 제곱 항을 하나 추가하고, optim에서 하나의 원소를 추가한다. 
+  
+혹은 exponential일 경우에, obs를 변화해주면 된다. -> exp일때는 이렇게 변화: exp(Z%*%gamma)  
+
+아래 그래프를 보면 어느정도 잡혀있음을 알 수 있다. 
+```{r makingconstant,warning = FALSE, message = FALSE}
+# Linear variance function: |r| = gam1 + gam2*Yhat.
+# For linear variance function, we can consider absolute residuals,
+# instead of squared residuals.
+# gam.hat = (Z^T W Z)^(-1) Z^T W |r|.
+
+beta.new = ml1$par      # initial parameter.
+W = diag(rep(1,length(Y)))
+mdif = 100000
+##obs = function(gamma,Z,r) sum((r^2 - (Z%*%gamma))^2/(Z%*%gamma)^2)
+#exp일때는 이렇게 변화: exp(Z%*%gamma)
+
+
+while(mdif > 0.000001) ##mle
+{
+  Yhat = f(beta.new,X)
+  r = Y - Yhat
+  Z = cbind(1,Yhat)
+  ##2차일 경우 -> Z = cbind(1,Y.hat,Y.hat^2)
+  ##a = optim(c(0.1,0.1), obs, method='BFGS', Z=Z, r=r)## 선형인데 선형을 직접 잡아줌 -> exponential 일 경우에는 obs를 변화해주면 되겠지.
+  ## 2차일 경우 -> optim(c(0.1,0.1,0.1), GLS, method='BFGS', Z=Z, r=r)
+  ##gam.hat = a$par ##-> 비선형일 경우
+  #[1] -0.92875848  0.24773573 -0.01603663  0.37221989  0.03079636
+  
+  
+  gam.hat = solve(t(Z) %*% W %*% Z) %*% t(Z) %*% W %*% abs(r)
+  #[1] -1.08473727  0.30740006 -0.02149087  0.33394053  0.02685877
+
+  
+  sigma = Z %*% gam.hat
+  S = diag(as.vector(sigma^2))
+  
+  if (is.non.singular.matrix(S)) W = solve(S)
+  else W = solve(S + 0.000000001*diag(rep(1,nrow(S))))
+
+  ml2 = optim(beta.new, obj.mean, gr=gr.mean,method='BFGS', Y=Y, X=X, S=S)
+  beta.old = beta.new
+  beta.new = ml2$par
+  mdif = max(abs(beta.new - beta.old))
+}
+
+beta.new
+
+Yhat = f(beta.new,X)
+sigma = Z %*% gam.hat
+r = (Y - Yhat)/sigma
+
+# Residual plot
+plot(Yhat,r, ylim=c(-4,4))
+lines(c(0,10),c(0,0),col='red')
+```
+만약 선형인데 이분산 패턴이 존재한다고 하면, 아래의 과정을 진행해도 된다. 
+Linear regression with non-constant variances를 진행한다. :lmvar
+
+아무래도 이 그래프는 선형이 아닌 비선형이기 때문에 그래프 결과가 잘 나오지 않는 것 같다.
+lmvar(y, X_mu = NULL, X_sigma = NULL)
+
+```{r about_linearregression_nonconst,warning = FALSE, message = FALSE}
+# lmvar: 
+# Linear mean function
+# Linear variance function: log(sigma) = X*beta
+# install.packages('lmvar')
+library(lmvar)
+
+X_s = cbind(attenu$mag, attenu$dist)##두 선정
+colnames(X_s) = c('mag', 'dist')
+fit3 = lmvar(attenu$accel, X, X_s)
+summary(fit3)
+
+ms = predict(fit3, X_mu=X, X_sigma=X_s)
+r1 = (Y - ms[,1])/ms[,2]
+plot(ms[,1],r1)
+lines(c(-10,10),c(0,0),col='red')
+```
+
+## Modelling Example 2:  Model with time correlations  
+시간에 대해서 correlation을 가지는 모델을 처리한다.
+
+tsdata를 불러온다. -> 시간의 흐름에 따라서 측정한 데이터;
+시간의 흐름에 따라서 측정했기 때문에 time correlation 있다고 가정한다.
+ 
+
+Residual 그래프를 보면, mean이 잡혀있지 않다.
+
+linear model을 summary 해서 보면, X변수가 되게 유의미 하게 나왔다.
+qq plot을 보면, normal 분포와 비슷하게 나온다. 
+residual plot을 보면 약간읜 패턴이 있어 보이지만, 거의 등분산처럼 보인다.
+ -> 등분산과 normality 만족한다.
+ 
+```{r timedataset,warning = FALSE, message = FALSE}
+tsdat = read.table('tsdat.txt',header=T)
+
+fit = lm(y ~ x, data=tsdat)
+summary(fit)
+
+par(mfrow=c(2,2))
+plot(fit)
+```
+
+더빈 왓슨 테스트에 대한 설명을 적자!!:
+더빈왓슨 테스트를 통해서 yi의 독립성을 본다.
+pvalue가 매우 작다 -> time correlation이 있다. -> 잡지 않을 경우에, 모형의 분산이 매우 커진다.  
+
+pvalue가 0이면, DW 가 2면 상관관계가 없는 것:timecorrelation이 없는 것;
+만약 0이면 양의 상관관계 4면 음의 상관관계를 가지는 것이다.
+
+
+```{r Durbin-Watson test ,warning = FALSE, message = FALSE}
+
+library(lmtest)
+dwtest(fit)##0이어야지 좋은 것 
+# Check ACF & PACF
+# install.packages('astsa')
+library(astsa)
+
+
+```
+### AR(p): ACF: Exponentially decreasing; PACF: Non-zero values at first p lags. -> 지수적으로 감소하는 패턴을 가진다 PACF에서 0이 아닌 값을 가진다.  
+### MA(q): ACF: Non-zero values at first q lags; PACF: Exponentially decreasing. -> ACF 가 0이 아닌 값을 가진다. PACF 에서는 지수적으로 감소하는 패턴을 가진다.  
+### ARMA(p,q): ACF: Similar to ACF of AR(p); PACF: Similar to PACF of MA(q) -> 둘다 감소하는 경우
+
+### 우리는 AR 중에서 차수가 1인 모델인 AR(1)만 확인한다.
+
+Y = f + e -> 회귀함수 f가 mean 패턴을 잡는다. 
+e 즉 오차항에 의해서 time correlation이 발생한다고 할 수 있다.
+
+그래프를 확인해보면 acf에서 지수적인 감소를 보이는 추세의 그래프가 나탄나며 PACF에서는 첫 항 제외 모두 0에 가까운 값을 나타낸다.
+-> 파란색 점선 안으로 들어왔을 경우에는 0에 가깝다고 생각한다.
+
+=> AR1 모형이면, timecorrelation 잡을 수 있겠다.
+
+
+## 그래프 해석:
+1. Standardized Residual 을 보면, 특이한 패턴을 가지지 않는 것을 볼 수 있다.
+2. ACF of Residuals : 모두 0에 가깝게 들어왔다. (파란색 안) -> 모두 독립성을 만족하고 있다고 볼 수 있다.
+
+
+```{r time_residual_fit,warning = FALSE, message = FALSE}
+acf2(residuals(fit))#residual의 timecorrelation이 있는지 없는지를 확인해야 한다.
+
+ar1 = sarima (residuals(fit), 1,0,0, no.constant=T)   #AR(1)모델을 fitting 하기 위해서 sarima 라는 function을 사용한다.->  sarima(xdata, p, d, q)
+# p -> AR 모형의 차수, q -> MA 모형의 차수, no.constant -> mue 가 0임 (error term이여서)
+ar1$fit
+```
+
+## MLE: Multivariate normal distribution
+## covariance matrix 
+
+sigma를 specification 진행해준다. -> 교안 5페이지 Maximum Likelyhood Estimation of AR(1) Error Model  
+
+t시점에서, 35986.2865정도 변한다.
+
+결과 [1] 35986.2865 -> 인터셉트    1.6521 -> coefficient
+alpha -> ar1 모델의 계수
+
+Yhat = 35986.29 + 1.65Xt
+et_hat = 0.6496 * et-1
+```{r time_mle ,warning = FALSE, message = FALSE}
+X = cbind(1,tsdat$x) ##beta1 상수항 제외 #intercept 제외
+Y = tsdat$y
+n = length(Y)
+S = diag(rep(1,n))# initial covariance matrix: 
+
+mdif = 1000000
+beta.old = rep(100000,2)
+
+while(mdif > 0.0000001)
+{
+  beta.new = as.vector(solve(t(X) %*% solve(S) %*% X) %*%t(X) %*% solve(S) %*% Y)## wlse
+  r = as.vector(Y - (X %*% beta.new))##residual
+  ar1 = sarima (r, 1,0,0, no.constant=T, details=F)
+  alpha = ar1$fit$coef## 사리마에서 알아서 alpha를 구해준다.
+  sigma2 = ar1$fit$sigma2##사리마에서 알아서 sigma를 구해준다.
+  
+  mdif = max(abs(beta.new - beta.old))
+  beta.old = beta.new
+  # Construct covariance matrix
+  S = matrix(nrow=n,ncol=n)## covariance 메트릭스를 만든다.
+  for (i in 1:n)
+  {
+    for (j in 1:n)
+    {
+      if (i == j) S[i,j] = 1 #대각요소
+      if (i != j) S[i,j] = alpha^(abs(i-j))#비대각요소
+    }
+  }
+  S = (sigma2 / (1-alpha^2)) * S #다시 beta_new의 가중치로 들어간다. -> solve(S)
+}
+
+round(beta.new,4)##intercept term
+```
+# MLE: Product of conditional distribution (Approximation) 
+바로 전시점에만 의존한다.
+p(x1)까지 생각을 한다고 하면 너무나 오래 걸리므로 
+앞에 term만 생각한다 -> 6page 
+
+//등분산으로 처리함 -> sigma 가 굳이 필요가 없다.
+
+조건부 분포를 사용해서 조건부가 등분산을 가지는 것을 이용.
+
+Y_t | Y_t-1 ~ N(X_t*beta + alpha*epsilon_t-1, sigma^2)##등분산임을 이용  
+
+Y_t | Y_t-1하에서
+Yt = beta0 + beta1xt + alpha et-1 + 에타 t
+선형에서의 lse 를 쓰면 beta와 alpha를 한번에 구할 수 있다.
+et-1와 같은 residual 파트는 계속 업데이트 되면서 추정이 다시 된다.
+
+조건부 확률에 대한 approximation 진행할 경우에, Y1의 마지널 분포를 생각 안해서 값이 조금 차이가 난다.
+
+```{r timeconditional_dist, warning = FALSE, message = FALSE}
+fit = lm(y ~ x, data=tsdat)
+
+Yt = tsdat$y[2:n]#첫번째 제외
+Xt = tsdat$x[2:n]
+et = residuals(fit)[1:(n-1)]##모델에서는 et-1
+mdif = 10000
+b.old = rep(0,3)##이니셜 베타값
+
+while(mdif > 0.0000001)
+{
+  fit.temp = lm(Yt ~ Xt + et)## 일반적인 lm 그린다 -> lse 되버린다.
+  b.new = fit.temp$coefficient
+  mdif = max(abs(b.new[1:2] - b.old[1:2]))
+  
+  et = (Y - X %*% b.new[1:2])[1:(n-1)]
+  b.old = b.new
+}
+
+round(b.new,4)
+
+
+```
+
+### built in function
+### AR을 따르는 error term이 있을 때, regression에 있는 beta를 추정해주는 함수
+방법은 조금 다르지만 아무 correlation이 없는 모델이 나온다.
+```{r timebuiltin, warning = FALSE, message = FALSE}
+# Built-in function 
+# cochrane.orcutt => f: linear model, error: AR(p) process.
+# install.packages("orcutt")
+library(orcutt)
+
+fit = lm(y ~ x, data=tsdat)
+cochrane.orcutt(fit)
+```
+
+
+# ####################################################### #
+# Modelling Example 3:  Model with spatial correlations #
+# ####################################################### #
+
+자기 상관 파트인 rhoWy파트가 들어갔다.
+rho -> scale을 결정
+W -> 잘 specification 해주면 된다.
+
+
+apply (input : array, output : array)
+lapply (input : list or vector, output : list)
+sapply (input : list or vector, output : vector or array)
+vapply (input : list or vector, output : vector or array)
+tapply (input : list or vector and factor, output : vector or array)
+mapply (input : list or vector, output : vector or array)
+
+apply(crds, 2, range)##1이면 행단위 연산, 2이면 열단위 연산
+
+# diff()는 벡터의 연속 요소 간의 차이를 계산하여 함수에 전달합니다. 최종 결과도 벡터입니다.  
+x <- c(5,3,4,3,8,9,4,8,1)  
+diff(x)  
+[1] -2  1 -1  5  1 -5  4 -7  
+
+#### Style
+#### style can take values “W”, “B”, “C”, “U”, “minmax” and “S”
+
+#### 'W' : row normalization                  
+#### 'B' : No normalization 
+#### 'C' : global normalization 
+#### 'U' :  C divided by the number of neighbours (sums over all links to unity)
+#### 'S' : variance-stabilizing coding scheme proposed by Tiefelsdorf et al. 1999, p. 167-168 (sums over all links to n).
+#### 'minmax' : divides by the minimum of the maximum row sums and maximum column sums. 
+################It is similar to the C and U styles; it is also available in Stata.
+
+
+Y 에 crime 을 사용, X에 HOVAL과 INC을 사용한다.
+즉 집값과, 수입을 통해서 범죄율을 측정한다. -> 각 데이터에 지역관련 데이터가 있기 때문에 spacial correlation을 지닌다.
+```{r spatial data, warning = FALSE, message = FALSE}
+# install.packages('spdep')
+library(spdep)
+data(oldcol)
+
+as_data_frame(data(oldcol))
+
+#?COL.OLD
+# 'COL.nb' has the neighbors list. -> neighborhood에 대한 정보가 적혀있다.
+
+# 2-D Coordinates of observations -> X좌표 값과 Y 좌표값을 구했다.
+## HOVAL INC 는 지역 중심에서 측정한 것
+
+crds = cbind(COL.OLD$X, COL.OLD$Y) ## 데이터 내에 존재하는 X와 Y를 가지고 distance 를 구한다.
+as_data_frame(crds)
+
+# Compute the maximum distance ## 가장 멀리 떨어진 두 지점을 구한다. -> 전체 바운더리의 크기를 구한다. -> 직사각형으로 가정 -> 전체 시의 크기: 두 거리의 차이가 절대로 이 길이를 넘어갈 수 없다.
+mdist = sqrt(sum(diff(apply(crds, 2, range))^2)) # 중심 간의 거리를 구한다.
+## 거리 공식 
+## diff()는 벡터의 연속 요소 간의 차이를 계산하여 함수에 전달합니다. 최종 결과도 벡터입니다.
+
+# All obs. between 0 and mdist are identified as neighborhoods.
+dnb = dnearneigh(crds, 0, mdist)##지역의 이웃 점들을  유클리드 거리로 영역 점의 이웃을식별합니다.
+## mdist는 최대, 0은 최소, 즉 이 거리 내에 들어있어야 neighborhoods다!
+## neighborhood 가 아니면, weight 가 0으로 작용된다. -> 여기에서는 이게 아닌 그냥 거리로 했다.
+
+
+
+# Compute Euclidean distance between obs.
+dists = nbdists(dnb, crds)##Spatial link distance measures
+
+# Compute Power distance weight d^(-2) # typical choice of alpha is 1 or 2
+##power distance wieght 사용:
+glst = lapply(dists, function(d) d^(-2)) # 각각의 d^2를 계산해준다. -> weight값이 된다.
+
+# Construct weight matrix with normalization 
+# style='C': global normalization; 'W': row normalization -> scalar normalization
+lw = nb2listw(dnb, glist=glst, style='C') ## glist만 바꿔서 넣으면 된다.
+## c -> scalar normalization
+
+## 종류를 가져다가 쓰면 됨.
+glst1 = lapply(dists, function(d) rank(d)<=5) # KNN weights
+lw1 = nb2listw(dnb, glist=glst1, style='B')
+
+glst2 = lapply(dists, function(d) d<=5) # Radial distance weights
+lw2 = nb2listw(dnb, glist=glst2, style='B')
+
+glst3 = lapply(dists, function(d) d^(-2)) # Power distance weights
+lw2 = nb2listw(dnb, glist=glst3, style='B')
+
+glst4 = lapply(dists, function(d) exp(-d)) # Exp. distance weights
+lw4 = nb2listw(dnb, glist=glst4, style='B')
+
+glst5 = lapply(dists, function(d) (1-(d/5)^2)^2*(d<=5)) # Double-power distance weights
+lw5 = nb2listw(dnb, glist=glst5, style='B')
+
+
+
+# Spatial Autoregressive Model
+# Spatial simultaneous autoregressive lag model estimation
+fit = lagsarlm(CRIME ~ HOVAL + INC, data=COL.OLD, listw=lw)
+summary(fit)
+
+# install.packages('spatialreg')
+library(spatialreg)
+
+# Fitted values
+predict(fit)
+```
+
+
+
+# ##################################################
+# Modelling Example 4:  Generalized Linear Models #
+# ##################################################
+
+
+
+
+wine data -> rating의 5개짜리 Categorical Data
+temp, contact 바이너리 변수를 X 변수로 사용하겠다.
+
+formula: rating ~ temp + contact
+data:    wine
+
+
+Coefficients:
+           Estimate Std. Error z value Pr(>|z|)    
+tempwarm     2.5031     0.5287   4.735 2.19e-06 *** -> 베타값들
+contactyes   1.5278     0.4766   3.205  0.00135 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Threshold coefficients:
+    Estimate Std. Error z value
+1|2  -1.3444     0.5171  -2.600 -> alpha k에 해당하는 값들들 -> 1과 나머지
+2|3   1.2508     0.4379   2.857 -> 1, 2와 나머지..,.
+3|4   3.4669     0.5978   5.800
+4|5   5.0064     0.7309   6.850
+
+
+log(p(y <= 1) / p(y >= 2)) = -1.344 + 2.5temp + 1.53 contact
+log(p(y <= 2) / p(y >= 3)) = -1.25 + 2.5temp + 1.53 contact
+log(p(y <= 3) / p(y >= 4)) = 3.47  + 2.5temp + 1.53 contact
+log(p(y <= 4) / p(y >= 5)) = 5.00 + 2.5temp + 1.53 contact
+
+절편에 대한 값만 계속 증가하고 있다.
+
+log (r1 / 1 - r1)
+
+##이것이 바로 cumulative logit model이다.
+
+```{r GLM}
+# install.packages('ordinal')
+library(ordinal)
+as_data_frame(wine)
+
+#?clm
+## fitting model`
+
+fit = clm(rating ~ temp + contact, data=wine, link = 'logit')## link function을 logit으로
+summary(fit)
+```
+
+########## Poisson regression model ##########
+
+
+grouseticks 데이터 사용 -> red grouse chicks 라는 새 이름: 아 새 머리에 있는 벼룩의 수를 count한다.
+
+Ticks count data: Y값
+HEIGHT, YEAR: X값
+
+hist를 통해서 데이터를 보았는데, 실제로 0가 많이 존재하는 포아송 분포를 가진다.
+zeroinflate poisson 사용이 더 좋을 수 있다.
+
+Coefficients:
+                Estimate Std. Error z value Pr(>|z|)    
+(Intercept)    27.454732   1.084156   25.32   <2e-16 ***
+HEIGHT         -0.058198   0.002539  -22.92   <2e-16 ***
+YEAR96        -18.994362   1.140285  -16.66   <2e-16 ***
+YEAR97        -19.247450   1.565774  -12.29   <2e-16 ***
+HEIGHT:YEAR96   0.044693   0.002662   16.79   <2e-16 ***
+HEIGHT:YEAR97   0.040453   0.003590   11.27   <2e-16 ***
+## 모두 유의미하게 나왔다.
+
+Dispersion parameter for poisson family taken to be 1
+Dispersion parameter가 1에 가깝게 나와줘야 된다. 1이 의미하는 것은 파이: -> 1이다.(in exp family)
+파이가 1을 만족해야 된다. 만약 파이가 1보다 크다고 하면 Overdispersion이 발생했다고 할 수 있다.
+파이에 대한 추정치: residual Deviance / DF ~ 1
+
+Residual deviance: 3009.0  on 397  degrees of freedom -> 7.6 > 1: mean과 variance 가 같으므로 overdispersion이 심심치 않게 일어난다.
+
+```{r glm_poission}
+# For data
+# install.packages('lme4')
+library(lme4)
+
+data(grouseticks)
+
+##?grouseticks
+
+as_data_frame(grouseticks)
+
+hist(grouseticks$TICKS,breaks=0:90)## 포아송 분포를 보인다.
+
+fit = glm(TICKS ~ HEIGHT*YEAR, data = grouseticks, family=poisson)##poisson regression이 된다.
+## multinomial
+#glm(y~., data=d.c.train, family = binomial("logit"))
+##family  = 분포(link) -> binorm('logit');
+summary(fit)
+```
+########## Negative binomial regression model ##########
+해석에 대한 설명을 여기에 적자!!
+
+Overdispersion이 발생했기 때문에 negative binomial을 사용한다.
+
+Coefficients:
+                Estimate Std. Error z value Pr(>|z|)    
+(Intercept)    20.030124   1.827525  10.960  < 2e-16 ***
+HEIGHT         -0.041308   0.004033 -10.242  < 2e-16 ***
+YEAR96        -10.820259   2.188634  -4.944 7.66e-07 ***
+YEAR97        -10.599427   2.527652  -4.193 2.75e-05 ***
+HEIGHT:YEAR96   0.026132   0.004824   5.418 6.04e-08 ***
+HEIGHT:YEAR97   0.020861   0.005571   3.745 0.000181 ***
+
+모두 유의미하다.
+
+Residual deviance: 418.82  on 397  degrees of freedom
+이번에는 거의 1에 가까운 값을 가진다고 할 수 있다.( 1.054962)
+
+Overdispersion이 많이 완화가 되었다. -> model fitting 이 더 뛰어나다.
+
+log mue hat = 20.03 -0.04 HEIGHT  -10.82 YEAR96 -10.59YEAR97 + 0.02HEIGHT:YEAR96 + 0.02HEIGHT:YEAR97 
+
+
+Height가 한단위 증가할때 logY가 0.04감소
+Height가 한단위 증가할때 Y가 exp(-0.04) 만큼 감소 
+
+```{r glm_NBR}
+
+library(MASS)
+fit1 = glm.nb(TICKS ~ HEIGHT*YEAR, data = grouseticks, link=log)## Negative Binomial Regression
+summary(fit1)
+```
+
+########## Proportional hazard model ##########
+
+survival builtin function이 필요하다.
+
+h(t|x) = 람다(t)exp(XTbeta): Proportional Hazard Model
+
+log(h(t)) = log(람다(t)) + XTbeta 
+
+
+Rossi dataset -> 범죄자들이 석방을 한 후에, 다시 체포가 되면 1, 아니면 0, 체포가 안됬을, 혹은 cencering 되었을 때 까지의 기간은 52주
+
+survival -> 생존: 체포 안됨.
+death -> 사망: 체포됨.
+
+week하고 arrest를 보면, week 32, arrest 0이면 52주 전에 censored 되었고(관찰이 안된 것)
+52주까지 체포가 되지 않은 녀석들도 censored 되었다고 본다.
+
+                  coef    exp(coef) se(coef)  z   Pr(>|z|)    
+finyes        -0.37352   0.68831  0.19082 -1.957 0.050295 .   ## financial을 받으면 위험률이 떨어진다.
+age            -0.05640   0.94516  0.02184 -2.583 0.009796 ** 
+raceother      -0.30983   0.73357  0.30780 -1.007 0.314133     ## 흑인이 더 위험률이 높다.
+wexpyes        -0.15331   0.85786  0.21218 -0.723 0.469957    
+marnot married  0.44339   1.55799  0.38136  1.163 0.244958    
+prio            0.09336   1.09785  0.02832  3.296 0.000981 ***
+
+
+prio와 age가 유의미한 변수이다.
+log(h(t)) = log(람다(t)) + XTbeta 
+h(t) = 람다(t)exp(XTbeta): Proportional Hazard Model
+
+
+h(t|x1)/ h(t|x2) = exp[(x1 - x2)Tbeta]
+나머지는 다 동일한데 finyes 만 yes no 라고 하자
+X1 = financial aid Yes
+X2 = financial aid NO
+ -> e[(x1 - x2)Tbeta] = e[1beta_financial_aid] = 0.68831 -> financial aid 받은 사람이 안받은 사람보다 위험률이 0.68배 낫다. (1보다 작으니까 낫다는 해석을 한다.)
+ 만약 1보다 크면, 예로 1.193이라고 하면 financial aid 받은 사람이 안받은 사람보다 위험률이 1.193배 높다. 라고 해석한다.
+ 
+ 다시 말해서 1보다 크다고 하면 분자가 분모보다 몇배 더 높다. 1보다 작다고 하면 분자가 분모보다 몇배 더 낮다.
+ 
+그래프를 해석해보면,주차수가 늘어날수록 체포되지 않을 확률이 점점 떨어지고 있음을 알 수 있다.
+
+또한 파란색 그래프 즉 financial 받은 그룹이 더 생존률(체포되지 않을 확률)이 높다는 걸 알 수 있다.
+
+
+
+
+
+
+```{r hazard_model}
+library(survival)
+# For data
+# install.packages('carData')
+library(carData)
+
+#?Rossi
+as_data_frame(Rossi)
+
+Surv(Rossi$week, Rossi$arrest)## censored 된 데이터에는 뒤에 +가 붙는다.
+## +가 붙어있지 않으면 체포가 된 것이다.
+##Rossi$week
+##Rossi$arrest
+fit = coxph(Surv(week,arrest) ~ fin + age+ race + wexp + mar + prio, 
+            data=Rossi)
+summary(fit)
+
+# Estimated survival function
+plot(survfit(fit),ylim=c(0.6,1),xlab="Weeks", ylab="Prop.of Not Rearrested")
+
+
+# Estimated survival functions for financial aid: 나머지는 다 동일 fin만 다르다.
+Rossi.fin = with(Rossi, data.frame(fin=c(0, 1), age=rep(mean(age), 2), 
+                                   race=rep(mean(race=='other'),2), 
+                                   wexp=rep(mean(wexp=="yes"),2), 
+                                   mar=rep(mean(mar=="not married"),2),
+                                   prio=rep(mean(prio),2)))
+
+plot(survfit(fit,newdata=Rossi.fin), conf.int=TRUE,
+     lty=c(1, 2), ylim=c(0.6, 1), col=c('red','blue'), 
+     xlab="Weeks", ylab="Prop. of Not Rearrested")
+
+legend("bottomleft", legend=c("fin = no","fin = yes"), 
+       lty=c(1 ,2),col=c('red','blue'))
+```
